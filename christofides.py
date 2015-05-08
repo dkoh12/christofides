@@ -203,34 +203,38 @@ def generatePath(G):
     MST = nx.MultiGraph(MST)
     MST.add_weighted_edges_from(matching)
     eulerTour = list(nx.eulerian_circuit(MST))
-    path1 = []
-    path2 = []
-    weightList = [MST[u][v][0]['weight'] for (u,v) in eulerTour]
-    k=1
-    check = False
-    for i, (u, v) in enumerate(eulerTour):
-        k += 1
-        if MST[u][v][0]["weight"] == max(weightList):
-            k = 0
-            check = True
-        if check and k != 0:
-            path2.append((u, v))
-        if not check:
-            path1.append((u, v))
     MST = nx.Graph(MST)
-    edgesBefore =  MST.edges()
-    MST = double_edge_swap(G, MST, nswap=1000, max_tries=1000)
-    # print 'After 2-OPT Swap:', set(MST.edges()) - set(edgesBefore)
-    path = path2 + path1
-    vSet = []
+    maxEdge = findMaxEdge(MST)
+    rudrataPath = findEulerPath(maxEdge, eulerTour)
+    print 'euler tour:', eulerTour
+    print 'rudrataPath:', rudrataPath, 'rudrataPath length:', len(rudrataPath)
+    swap = nx.Graph()
+    swap.add_nodes_from(MST.nodes(data=True))
+    swap.add_weighted_edges_from([(u, v, G[u][v]['weight']) for (u, v) in rudrataPath]) # THIS LINE HAS PROBLEMS
+    # print 'swap edges:', swap.edges(), 'number of swap edges:', len(swap.edges())
+    # print 'MST Edges Before:', swap.edges()
+    if len(swap.nodes()) > 4:
+        swap = double_edge_swap(G, swap, nswap=50, max_tries=2000)
+    print 'swap edges after:', swap.edges(), 'number of:', len(swap.edges())
+    # print 'MST Edges After:', MST.edges()
+    # print 'Resulting Tour:', tour
+    # print swap.edges()
+    path = edgesToPath(swap.edges())
+    # print path
+    # print 'LENGTH OF PATH:', len(path), 'NO OF VERTICES:', len(G.nodes())
     TSP = ''
-    for (u, v) in path:
-        if u not in vSet:
-            TSP += str(u) + ' '
-            vSet.append(u)
-        if v not in vSet:
-            TSP += str(v) + ' '
-            vSet.append(v)
+    for v in path:
+        TSP += str(v) + ' '
+    # for (u, v) in tour:
+    #     if u not in path:
+    #         TSP += str(u) + ' '
+    #         path.append(u)
+    #     if v not in path:
+    #         TSP += str(v) + ' '
+    #         path.append(v)
+    print TSP[:-1]
+    problems = pathCheck(G, path)
+    print 'Number of RB Problems:', problems
     return TSP[:-1] # gets rid of final space
 
 def findMinEdge(O):
@@ -243,14 +247,56 @@ def findMinEdge(O):
     return minEdge
 
 def findMaxEdge(O):
-    maxWeight = 0
+    maxWeight = -1
     maxEdge = None
     for (u,v) in O.edges():
         if u != v and O[u][v]['weight'] > maxWeight:
             maxWeight = O[u][v]['weight']
-            maxEdge = (u,v, maxWeight)
+            maxEdge = (u,v)
     return maxEdge
 
+def findEulerPath(maxEdge, eulerTour):
+    path1, path2 = [], []
+    split = False
+    for (u, v) in eulerTour:
+        skip = False
+        if (u, v) == maxEdge or (v, u) == maxEdge:
+            split = True
+        if split and not skip:
+            path2.append((u, v))
+        if not split:
+            path1.append((u, v))
+    path = path2 + path1  # heaviest edge in cycle removed
+    vertices = [] # ordering of vertices visited
+    for (u, v) in path:
+        if u not in vertices:
+            vertices.append(u)
+        if v not in vertices:
+            vertices.append(v)
+    finalPath = zip(vertices[:-1], vertices[1:])
+    return finalPath
+
+def edgesToPath(edges):
+    # INPUT EDGES SHOULD FORM A PATH,
+    # THIS FUNCTION CALCULATES IT
+    O = nx.Graph()
+    for (u, v) in edges:
+        O.add_node(u)
+        O.add_node(v)
+        O.add_edge(u, v)
+    odd_v = []
+    for v in O.nodes():
+        if len(O.neighbors(v)) % 2 == 1:
+            odd_v.append(v)
+    start_v = odd_v[0]
+    end_v = odd_v[1]
+    path = [start_v]
+    while start_v != end_v:
+        next_v = O.neighbors(start_v)[0]
+        O.remove_node(start_v)
+        start_v = next_v
+        path.append(next_v)
+    return path
 
 def double_edge_swap(G, O, nswap=1, max_tries=100):
     """O is a graph,
@@ -265,13 +311,13 @@ def double_edge_swap(G, O, nswap=1, max_tries=100):
         raise nx.NetworkXError("Number of swaps > number of tries allowed.")
     if len(O) < 4:
         raise nx.NetworkXError("graph has less than 4 vertices")
-
     n=0
     currentCost = cost(O)
     swapcount=0
     keys, degrees=zip(*O.degree().items())
     cdf=nx.utils.cumulative_distribution(degrees)
     while swapcount < nswap:
+        # print 'swapcount:', swapcount, 'nswap:', nswap
         W = O.copy()
         (ui,xi) = nx.utils.discrete_sequence(2,cdistribution=cdf)
         if ui==xi:
@@ -287,10 +333,11 @@ def double_edge_swap(G, O, nswap=1, max_tries=100):
             O.add_edge(v,y,weight=G[v][y]['weight'])
             O.remove_edge(u,v)
             O.remove_edge(x,y)
-            if pathCheck(G, O.nodes()):
+            if pathCheck(G, edgesToPath(O.edges())) == 0:
                 break
             swapcount+=1
-        if cost(O) > currentCost:
+        #if cost(O) + 10 > currentCost:
+        if pathCheck(G, edgesToPath(O.edges())) >= pathCheck(G, edgesToPath(W.edges())):
             O = W
         if n >= max_tries:
             return W
@@ -299,17 +346,21 @@ def double_edge_swap(G, O, nswap=1, max_tries=100):
 
 def pathCheck(G, listV):
     count = 0
+    problems = 0
     lastColor = None
+    RBString = ''
     for v in listV:
-        # G.node[u]['color']
-        lastColor = G.node[v]['color']
+        RBString += G.node[v]['color']
         if count > 3:
-            return False
-        if G.node[v]['color'] == lastColor:
+            problems += 1
+            count = 0
+        elif G.node[v]['color'] == lastColor:
             count += 1
         else:
             count = 0
-    return True
+        lastColor = G.node[v]['color']
+    # print RBString
+    return problems
 
 def cost(O):
     total = 0
@@ -322,9 +373,9 @@ def main():
     if len(sys.argv) == 2:
         global filename
         filename = sys.argv[1]
-        outfile = 'answer.out'
-        output = open(outfile, 'w')
         if filename == 'all':
+            outfile = 'answer.out'
+            output = open(outfile, 'w')
             for i in range(1,496):
                 filename = 'instances/' + str(i) + '.in'
                 print filename
@@ -337,7 +388,7 @@ def main():
         else:
             G = generateGraph()
             TSP = generatePath(G)
-            output.write(TSP)
+            # output.write(TSP)
     else:
         print "Usage: christofides.py [filename|all]"
 
