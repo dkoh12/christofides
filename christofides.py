@@ -246,6 +246,19 @@ def findMaxEdge(O):
             maxEdge = (u,v, maxWeight)
     return maxEdge
 
+
+def pathCheck(G, listV):
+    colorSet = []
+    count = 0
+    lastColor = None
+    for v in listV:
+        colorSet.append(G[v]['color'])
+        lastColor = G[v]['color']
+        if G[v]['color'] == lastColor:
+            count++
+        else:
+            count = 0
+
 def main():
     import sys
     if len(sys.argv) == 2:
