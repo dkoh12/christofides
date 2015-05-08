@@ -417,20 +417,43 @@ def generatePath(G):
     for v in even_v:
         O.remove_node(v)
     matching = []
-    while len(O.edges()) > 0:
+    while len(O.edges()) > 1:
         minEdge = findMinEdge(O)
         O.remove_node(minEdge[0])
         O.remove_node(minEdge[1])
         matching.append(minEdge)
     MST = nx.MultiGraph(MST)
     MST.add_weighted_edges_from(matching)
-    eulerTour = nx.eulerian_circuit(MST)
-    path = []
-    for (u, v) in eulerTour:
-        if u not in path:
-            path.append(u)
-        if v not in path:
-            path.append(v)
+
+    # maxEdge = findMaxEdge(MST)
+    # print maxEdge
+
+    eulerTour = list(nx.eulerian_circuit(MST))
+    path1 = []
+    path2 = []
+    weightList = [MST[u][v][0]['weight'] for (u,v) in eulerTour]
+    k=1
+    check = False
+    for i, (u, v) in enumerate(eulerTour):
+        k+=1
+        if MST[u][v][0]["weight"] == max(weightList):
+            k=0
+            check = True
+        if check and k!=0:
+            path2.append((u,v))
+        if not check:
+            path1.append((u,v))
+
+    print path1, path2
+    path = path2 + path1
+
+        # if u not in path:
+        #     path.append(u)
+        # if v not in path:
+        #     path.append(v)
+        # print (u,v)
+
+
     return path
 
 def findMinEdge(O):
@@ -442,6 +465,14 @@ def findMinEdge(O):
             minEdge = (u, v, minWeight)
     return minEdge
 
+def findMaxEdge(O):
+    maxWeight = 0
+    maxEdge = None
+    for (u,v) in O.edges():
+        if u != v and O[u][v]['weight'] > maxWeight:
+            maxWeight = O[u][v]['weight']
+            maxEdge = (u,v, maxWeight)
+    return maxEdge
 
 def main():
     import sys
