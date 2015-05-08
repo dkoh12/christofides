@@ -248,16 +248,20 @@ def findMaxEdge(O):
 
 
 def pathCheck(G, listV):
-    colorSet = []
+    # colorSet = []
     count = 0
     lastColor = None
     for v in listV:
-        colorSet.append(G[v]['color'])
+        # colorSet.append(G[v]['color'])
         lastColor = G[v]['color']
+        if count > 3:
+            return False
         if G[v]['color'] == lastColor:
             count++
         else:
             count = 0
+    return True
+
 
 def main():
     import sys
