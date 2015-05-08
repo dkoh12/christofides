@@ -1,6 +1,7 @@
 from __future__ import division
 import csv
 import time
+import random
 import networkx as nx
 
 """
@@ -208,14 +209,18 @@ def generatePath(G):
     k=1
     check = False
     for i, (u, v) in enumerate(eulerTour):
-        k+=1
+        k += 1
         if MST[u][v][0]["weight"] == max(weightList):
-            k=0
+            k = 0
             check = True
-        if check and k!=0:
-            path2.append((u,v))
+        if check and k != 0:
+            path2.append((u, v))
         if not check:
-            path1.append((u,v))
+            path1.append((u, v))
+    MST = nx.Graph(MST)
+    edgesBefore =  MST.edges()
+    MST = double_edge_swap(G, MST, nswap=1000, max_tries=1000)
+    # print 'After 2-OPT Swap:', set(MST.edges()) - set(edgesBefore)
     path = path2 + path1
     vSet = []
     TSP = ''
@@ -229,7 +234,7 @@ def generatePath(G):
     return TSP[:-1] # gets rid of final space
 
 def findMinEdge(O):
-    minWeight = 100
+    minWeight = 101
     minEdge = None
     for (u, v) in O.edges():
         if u != v and O[u][v]['weight'] < minWeight:
@@ -246,19 +251,85 @@ def findMaxEdge(O):
             maxEdge = (u,v, maxWeight)
     return maxEdge
 
+
+def double_edge_swap(G, O, nswap=1, max_tries=100):
+    """O is a graph,
+    nswap is number of swaps to perform,
+    max_tries are the maximum number of attempts
+
+    this returns a graph after double edge swaps
+    """
+    if O.is_directed():
+        raise nx.NetworkXError("double_edge_swap() not defined for directed graphs")
+    if nswap > max_tries:
+        raise nx.NetworkXError("Number of swaps > number of tries allowed.")
+    if len(O) < 4:
+        raise nx.NetworkXError("graph has less than 4 vertices")
+
+    n=0
+    currentCost = cost(O)
+    swapcount=0
+    keys, degrees=zip(*O.degree().items())
+    cdf=nx.utils.cumulative_distribution(degrees)
+    while swapcount < nswap:
+        W = O.copy()
+        (ui,xi) = nx.utils.discrete_sequence(2,cdistribution=cdf)
+        if ui==xi:
+            continue #same source, skip
+        u=keys[ui]
+        x=keys[xi]
+        v=random.choice([n for n in O[u] if type(n) == int])
+        y=random.choice([n for n in O[x] if type(n) == int])
+        if v == y:
+            continue #same source, skip
+        if (x not in O[u]) and (y not in O[v]): #don't create parallel edges
+            O.add_edge(u,x,weight=G[u][x]['weight'])
+            O.add_edge(v,y,weight=G[v][y]['weight'])
+            O.remove_edge(u,v)
+            O.remove_edge(x,y)
+            if pathCheck(G, O.nodes()):
+                break
+            swapcount+=1
+        if cost(O) > currentCost:
+            O = W
+        if n >= max_tries:
+            return W
+        n+=1
+    return O
+
+def pathCheck(G, listV):
+    count = 0
+    lastColor = None
+    for v in listV:
+        # G.node[u]['color']
+        lastColor = G.node[v]['color']
+        if count > 3:
+            return False
+        if G.node[v]['color'] == lastColor:
+            count += 1
+        else:
+            count = 0
+    return True
+
+def cost(O):
+    total = 0
+    for (u, v) in O.edges():
+        total += O[u][v]['weight']
+    return total
+
 def main():
     import sys
     if len(sys.argv) == 2:
         global filename
         filename = sys.argv[1]
         outfile = 'answer.out'
+        output = open(outfile, 'w')
         if filename == 'all':
             for i in range(1,496):
                 filename = 'instances/' + str(i) + '.in'
                 print filename
                 G = generateGraph()
                 TSP = generatePath(G)
-                output = open(outfile, 'w')
                 if i == 495:
                     output.write(TSP)
                 else:
@@ -266,7 +337,6 @@ def main():
         else:
             G = generateGraph()
             TSP = generatePath(G)
-            output = open(outfile, 'w')
             output.write(TSP)
     else:
         print "Usage: christofides.py [filename|all]"
