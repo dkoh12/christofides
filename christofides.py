@@ -1,6 +1,7 @@
 from __future__ import division
 import csv
 import time
+import math
 import random
 import networkx as nx
 
@@ -49,38 +50,19 @@ def generatePath(G):
     eulerTour = list(nx.eulerian_circuit(MST))
     MST = nx.Graph(MST)
     maxEdge = findMaxEdge(MST)
-    rudrataPath = findEulerPath(maxEdge, eulerTour)
-    print 'euler tour:', eulerTour
-    print 'rudrataPath:', rudrataPath, 'rudrataPath length:', len(rudrataPath)
+    rudrataPath = findEulerPath(maxEdge, eulerTour) #eulerPath
     swap = nx.Graph()
     swap.add_nodes_from(MST.nodes(data=True))
-    swap.add_weighted_edges_from([(u, v, G[u][v]['weight']) for (u, v) in rudrataPath]) # THIS LINE HAS PROBLEMS
-    # print 'swap edges:', swap.edges(), 'number of swap edges:', len(swap.edges())
-    # print 'MST Edges Before:', swap.edges()
-    # if len(swap.nodes()) > 4:
-    #     swap = double_edge_swap(G, swap, nswap=50, max_tries=2000)
-    # print 'swap edges after:', swap.edges(), 'number of:', len(swap.edges())
-    # print 'MST Edges After:', MST.edges()
-    # print 'Resulting Tour:', tour
-    # print swap.edges()
+    swap.add_weighted_edges_from([(u, v, G[u][v]['weight']) for (u, v) in rudrataPath])
+    if len(swap.nodes()) > 4:
+        swap = double_edge_swap(G, swap, nswap=2000, max_tries=10000)
     path = edgesToPath(swap.edges())
-    # print path
-    print 'LENGTH OF PATH:', len(path), 'NO OF VERTICES:', len(G.nodes())
     problems = pathCheck(G, path)
     if problems > 0:
         path = CHEAT(G)
     TSP = ''
     for v in path:
         TSP += str(v) + ' '
-    # for (u, v) in tour:
-    #     if u not in path:
-    #         TSP += str(u) + ' '
-    #         path.append(u)
-    #     if v not in path:
-    #         TSP += str(v) + ' '
-    #         path.append(v)
-    print TSP[:-1]
-    print 'Number of RB Problems:', problems
     return TSP[:-1] # gets rid of final space
 
 def findMinEdge(O):
@@ -102,6 +84,9 @@ def findMaxEdge(O):
     return maxEdge
 
 def findEulerPath(maxEdge, eulerTour):
+    """Takes in a eulerTour and a maxedge and deletes the max edge such that
+        we return a euler Path. We then reorder the euler path.
+    """
     path1, path2 = [], []
     split = False
     for (u, v) in eulerTour:
@@ -123,8 +108,8 @@ def findEulerPath(maxEdge, eulerTour):
     return finalPath
 
 def edgesToPath(edges):
-    # INPUT EDGES SHOULD FORM A PATH,
-    # THIS FUNCTION CALCULATES IT
+    """input edges forms a path
+    """
     O = nx.Graph()
     for (u, v) in edges:
         O.add_node(u)
@@ -148,9 +133,10 @@ def double_edge_swap(G, O, nswap=1, max_tries=100):
     """O is a graph,
     nswap is number of swaps to perform,
     max_tries are the maximum number of attempts
-
     this returns a graph after double edge swaps
     """
+    if not nx.is_connected(O):
+        raise nx.NetworkXError("Graph not connected")
     if O.is_directed():
         raise nx.NetworkXError("double_edge_swap() not defined for directed graphs")
     if nswap > max_tries:
@@ -162,27 +148,47 @@ def double_edge_swap(G, O, nswap=1, max_tries=100):
     swapcount=0
     keys, degrees=zip(*O.degree().items())
     cdf=nx.utils.cumulative_distribution(degrees)
+    window = 1
     while swapcount < nswap:
-        # print 'swapcount:', swapcount, 'nswap:', nswap
+        wcount=0
+        swapped=[]
         W = O.copy()
-        (ui,xi) = nx.utils.discrete_sequence(2,cdistribution=cdf)
-        if ui==xi:
-            continue #same source, skip
-        u=keys[ui]
-        x=keys[xi]
-        v=random.choice([n for n in O[u] if type(n) == int])
-        y=random.choice([n for n in O[x] if type(n) == int])
-        if v == y:
-            continue #same source, skip
-        if (x not in O[u]) and (y not in O[v]): #don't create parallel edges
-            O.add_edge(u,x,weight=G[u][x]['weight'])
-            O.add_edge(v,y,weight=G[v][y]['weight'])
-            O.remove_edge(u,v)
-            O.remove_edge(x,y)
+        while wcount < window and swapcount < nswap:
+            (ui,xi) = nx.utils.discrete_sequence(2,cdistribution=cdf)
+            if ui==xi:
+                continue #same source, skip
+            u=keys[ui]
+            x=keys[xi]
+            v=random.choice([n for n in O[u] if type(n) == int])
+            y=random.choice([n for n in O[x] if type(n) == int])
+            if v == y:
+                continue #same source, skip
+            if (x not in O[u]) and (y not in O[v]): #don't create parallel edges
+                O.add_edge(u,x,weight=G[u][x]['weight'])
+                O.add_edge(v,y,weight=G[v][y]['weight'])
+                O.remove_edge(u,v)
+                O.remove_edge(x,y)
+                swapped.append((u,v,x,y)) # not sure about this
+                swapcount+=1
             if pathCheck(G, edgesToPath(O.edges())) == 0:
+                if cost(O) > currentCost:
+                    O = W
+                currentCost = cost(O)
                 break
             swapcount+=1
-        #if cost(O) + 10 > currentCost:
+            wcount+=1
+        if nx.is_connected(O):
+            window+=1
+        else:
+            while swapped:
+                #if not connected undo changes
+                (u,v,x,y) = swapped.pop()
+                O.add_edge(u,v, weight=G[u][v]['weight'])
+                O.add_edge(x,y, weight=G[x][y]['weight'])
+                O.remove_edge(u,x)
+                O.remove_edge(v,y)
+                swapcount-=1
+            window = int(math.ceil(float(window)/2))
         if pathCheck(G, edgesToPath(O.edges())) >= pathCheck(G, edgesToPath(W.edges())):
             O = W
         if n >= max_tries:
@@ -209,18 +215,20 @@ def pathCheck(G, listV):
     return problems
 
 def cost(O):
+    """returns cost of all edges in a graph"""
     total = 0
     for (u, v) in O.edges():
         total += O[u][v]['weight']
     return total
 
-def CHEAT(LOL):
+def CHEAT(G):
+    """ does random bipartite traversal"""
     red_nodes = []
     blue_nodes = []
-    for u in LOL.nodes():
-        if LOL.node[u]['color'] == 'r':
+    for u in G.nodes():
+        if G.node[u]['color'] == 'r':
             red_nodes.append(u)
-        elif LOL.node[u]['color'] == 'b':
+        elif G.node[u]['color'] == 'b':
             blue_nodes.append(u)
     random.shuffle(red_nodes)
     random.shuffle(blue_nodes)
